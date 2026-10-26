@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0f1218">
+<title>Музыкальный дневник</title>
+<style>
+:root{--bg:#0f1218;--c:#1b2029;--c2:#242a36;--t:#eef1f5;--m:#8b94a5;--g:#a6e3b4;--r:14px}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--t);font:16px/1.4 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif;padding-top:env(safe-area-inset-top)}
+#app{max-width:520px;margin:0 auto;padding:16px 16px 100px}
+h1{font-size:34px;margin:6px 0 8px;line-height:1.1}
+h2{font-size:19px;margin:22px 0 10px}
+.m{color:var(--m);font-size:14px}
+.up{text-transform:uppercase;letter-spacing:.05em;font-size:13px;color:var(--m)}
+.card{background:var(--c);border-radius:var(--r);padding:14px;margin:10px 0}
+.row{display:flex;gap:10px}.row>*{flex:1}
+.big{font-size:30px;font-weight:700}
+.btn{display:block;width:100%;border:0;border-radius:var(--r);padding:15px;font-size:17px;font-weight:600;background:var(--g);color:#10261a;font-family:inherit}
+.btn.s{background:var(--c2);color:var(--t)}
+input,select,textarea{width:100%;background:var(--c2);color:var(--t);border:1px solid #2f3746;border-radius:12px;padding:12px;font:inherit;margin:6px 0}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{padding:9px 13px;border-radius:20px;background:var(--c2);border:1px solid #2f3746;font-size:15px}
+.chip.on{background:var(--g);color:#10261a;border-color:var(--g)}
+.plan{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid #232937}
+.ck{width:26px;height:26px;border-radius:50%;border:2px solid #4a5366;flex:none;display:grid;place-items:center}
+.ck.on{border-color:var(--g);color:var(--g)}
+.hm{display:grid;grid-template-columns:repeat(12,1fr);grid-template-rows:repeat(7,auto);grid-auto-flow:column;gap:4px}
+.hm i{aspect-ratio:1;border-radius:4px;background:#232937}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#151a22;border-top:1px solid #232937;padding:6px 0 calc(6px + env(safe-area-inset-bottom))}
+nav a{flex:1;text-align:center;padding:8px;color:var(--m);font-size:13px}
+nav a.on{color:var(--g)}
+.sh{position:fixed;inset:0;background:#000b;display:flex;align-items:flex-end;z-index:9}
+.sh>div{background:var(--bg);width:100%;max-width:520px;margin:0 auto;max-height:92vh;overflow:auto;border-radius:20px 20px 0 0;padding:18px}
+.bar{height:8px;border-radius:4px;background:var(--g)}
+</style></head><body><div id="app"></div>
+<script>
+const K='music_diary_v1';
+let db;try{db=JSON.parse(localStorage.getItem(K))}catch(e){}
+db=db||{projects:[],sessions:[],plans:[]};
+const save=()=>{try{localStorage.setItem(K,JSON.stringify(db))}catch(e){}};
+const $=s=>document.querySelector(s);
+const pad=n=>String(n).padStart(2,'0');
+const ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const today=()=>ymd(new Date());
+const addD=(s,n)=>{const d=new Date(s+'T12:00:00');d.setDate(d.getDate()+n);return ymd(d)};
+const uid=()=>Math.random().toString(36).slice(2,9);
+const TYPES=['Бит','Мелодия','Ударные','Вокал','Текст','Сведение','Мастеринг','Обложка','Клип','Релиз'];
+const PROD=TYPES.slice(0,7);
+const RT={5:['🔥','Получилось'],4:['🟢','Хорошо'],3:['🟡','Норм'],2:['🟠','Не очень'],1:['💀','Полная хуйня']};
+const RC={1:'#6b3a3a',2:'#a8672f',3:'#b8a93a',4:'#3f9b57',5:'#6fe08a'};
+const ST={work:'В работе',demo:'Демо',done:'Закончен',out:'Выпущен'};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pn=id=>{const p=db.projects.find(p=>p.id==id);return p?p.name:'Без проекта'};
+const fmt=m=>{m=Math.round(m);const h=Math.floor(m/60);return h?h+' ч'+(m%60?' '+m%60+' м':''):m+' м'};
+const popts=sel=>db.projects.map(p=>`<option value="${p.id}" ${p.id==sel?'selected':''}>${esc(p.name)}</option>`).join('');
+let tab='home',welcome=1,sheet=0,selDay=null,range='m',draft={};
+
+function streak(){const ds=new Set(db.sessions.map(s=>s.date));let d=today();if(!ds.has(d))d=addD(d,-1);let n=0;while(ds.has(d)){n++;d=addD(d,-1)}return n}
+function weekMin(){const f=addD(today(),-6);return db.sessions.filter(s=>s.date>=f).reduce((a,s)=>a+s.min,0)}
+function last(){return db.sessions.slice().sort((a,b)=>a.date<b.date?1:-1)[0]}
+const sess=s=>`<b>${esc(pn(s.pid))}</b> ${RT[s.rating][0]}<div class="m">${s.types.join(', ')||'—'} · ${fmt(s.min)}${s.note?'<br>'+esc(s.note):''}</div>`;
+
+function viewWelcome(){const l=last();
+return `<div class="up" style="margin-top:30px">${new Date().toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long'})}</div>
+<h1>${db.sessions.length?'С возвращением.':'Привет.'}</h1>
+<p class="m" style="font-size:18px">Необязательно создать шедевр. Достаточно сегодня что-то создать.</p>
+<div class="row"><div class="card"><div class="m">🔥 Стрик</div><div class="big">${streak()} дн.</div></div>
+<div class="card"><div class="m">За 7 дней</div><div class="big">${fmt(weekMin())}</div></div></div>
+${l?`<div class="card"><div class="up">В прошлый раз · ${l.date}</div>${sess(l)}</div>`:'<div class="card m">Пока пусто. Зафиксируй первую сессию.</div>'}
+<button class="btn" onclick="A('go')">Поехали</button>`}
+
+function heat(){const t=today();const dow=(new Date(t+'T12:00:00').getDay()+6)%7;const start=addD(t,-dow-77);
+const by={};db.sessions.forEach(s=>(by[s.date]=by[s.date]||[]).push(s));
+let h='';for(let i=0;i<84;i++){const d=addD(start,i),a=by[d];let st='';
+if(d>t)st='opacity:.25';else if(a)st='background:'+RC[Math.round(a.reduce((x,s)=>x+s.rating,0)/a.length)];
+if(d==t)st+=';outline:2px solid #fff6';if(d==selDay)st+=';outline:2px solid #fff';
+h+=`<i style="${st}" onclick="A('day','${d}')"></i>`}
+return `<div class="m" style="margin-bottom:8px">12 недель · цвет — средняя оценка дня</div><div class="hm">${h}</div>
+<div class="m" style="margin-top:8px">хуже ${[1,2,3,4,5].map(r=>`<span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:${RC[r]};vertical-align:middle"></span>`).join(' ')} лучше</div>`}
+
+function dayView(){if(!selDay)return'';const a=db.sessions.filter(s=>s.date==selDay);
+return `<div class="card"><div class="up">${selDay}</div>${a.length?a.map(s=>`<div class="plan"><div style="flex:1">${sess(s)}</div><span class="m" onclick="A('ds','${s.id}')">✕</span></div>`).join(''):'<div class="m">В этот день ничего не записано.</div>'}</div>`}
+
+function home(){const t=today(),pl=db.plans.filter(p=>p.date==t),dn=pl.filter(p=>p.done).length;
+return `<h2 style="margin-top:6px;display:flex;justify-content:space-between">Планы на сегодня<span class="m">${pl.length?dn+' из '+pl.length:''}</span></h2>
+<div class="card">${pl.length?pl.map(p=>`<div class="plan"><div class="ck ${p.done?'on':''}" onclick="A('tp','${p.id}')">${p.done?'✓':''}</div><div style="flex:1"><div>${esc(p.text)}</div><div class="m">${esc(pn(p.pid))}${p.min?' · '+p.min+' мин':''}</div></div><span class="m" onclick="A('dp','${p.id}')">✕</span></div>`).join(''):'<div class="m">Планов пока нет.</div>'}
+${db.projects.length?`<input id="pt" placeholder="Что сделать?" style="margin-top:12px"><div class="row"><select id="pp">${popts()}</select><input id="pm" type="number" inputmode="numeric" placeholder="минут"></div><div class="m">Когда</div><input id="pd" type="date" value="${t}" min="${t}"><button class="btn s" onclick="A('ap')">+ В план</button>`:`<button class="btn s" style="margin-top:10px" onclick="A('tab','pr')">+ Добавить проект</button>`}</div>
+${up()}
+<button class="btn" onclick="A('log')">+ Зафиксировать работу</button>
+<h2>Творческая активность</h2>${heat()}${dayView()}`}
+
+function up(){const t=today(),f=db.plans.filter(p=>p.date>t).sort((a,b)=>a.date<b.date?-1:1);if(!f.length)return'';
+let h='',cur='';f.forEach(p=>{if(p.date!=cur){cur=p.date;h+=`<div class="up" style="margin-top:12px">${new Date(cur+'T12:00:00').toLocaleDateString('ru-RU',{weekday:'short',day:'numeric',month:'long'})}</div>`}
+h+=`<div class="plan"><div style="flex:1"><div>${esc(p.text)}</div><div class="m">${esc(pn(p.pid))}${p.min?' · '+p.min+' мин':''}</div></div><span class="m" onclick="A('dp','${p.id}')">✕</span></div>`});
+return `<h2>Дальше</h2><div class="card" style="margin-top:0">${h}</div>`}
+function sheetView(){const d=draft,np=!db.projects.length||d.pid=='new';
+return `<div class="sh"><div><h2 style="margin-top:0">Новая творческая сессия</h2>
+<div class="m">Проект</div>
+<select onchange="draft.pid=this.value;render()">${popts(d.pid)}<option value="new" ${np?'selected':''}>+ Новый проект…</option></select>
+${np?`<input placeholder="Название проекта" value="${esc(d.nn||'')}" oninput="draft.nn=this.value">`:''}
+<h2>Что делал сегодня?</h2><div class="chips">${TYPES.map(t=>`<span class="chip ${d.types.includes(t)?'on':''}" onclick="A('ty','${t}')">${t}</span>`).join('')}<span class="chip ${PROD.every(t=>d.types.includes(t))?'on':''}" onclick="A('all')">Вся песня целиком</span></div>
+<h2>Как оцениваешь результат?</h2><div class="chips">${[5,4,3,2,1].map(r=>`<span class="chip ${d.rating==r?'on':''}" onclick="draft.rating=${r};render()">${RT[r][0]} ${RT[r][1]}</span>`).join('')}</div>
+<h2>Сколько времени потратил? (минуты)</h2><input type="number" inputmode="numeric" value="${d.min||''}" oninput="draft.min=this.value">
+<div class="m">Дата</div><input type="date" value="${d.date}" max="${today()}" onchange="draft.date=this.value">
+<textarea rows="2" placeholder="Заметка для себя (необязательно)" oninput="draft.note=this.value">${esc(d.note||'')}</textarea>
+<button class="btn" onclick="A('sv')">Сохранить</button><button class="btn s" style="margin-top:8px" onclick="sheet=0;render()">Отмена</button></div></div>`}
+
+function bars(o,f,nm){const e=Object.entries(o).sort((a,b)=>b[1]-a[1]);const mx=e.length?e[0][1]||1:1;
+return e.length?e.map(([k,v])=>`<div style="margin:8px 0"><div style="display:flex;justify-content:space-between"><span>${esc(nm(k))}</span><span class="m">${f(v)}</span></div><div class="bar" style="width:${Math.max(3,v/mx*100)}%"></div></div>`).join(''):'<div class="m">Нет данных</div>'}
+
+function hist(){const t=today(),lim=range=='m'?t.slice(0,8)+'01':'0000';
+const S=db.sessions.filter(s=>s.date>=lim),days=new Set(S.map(s=>s.date)).size,tot=S.reduce((a,s)=>a+s.min,0);
+const bp={},bt={};S.forEach(s=>{bp[s.pid]=(bp[s.pid]||0)+s.min;s.types.forEach(x=>bt[x]=(bt[x]||0)+1)});
+const cnt=k=>db.projects.filter(p=>p.status==k).length;
+let wr='';for(let i=7;i>=0;i--){const e=addD(t,-i*7),s0=addD(e,-6),a=db.sessions.filter(s=>s.date>=s0&&s.date<=e);
+const r=a.length?a.reduce((x,s)=>x+s.rating,0)/a.length:0;
+wr+=`<div style="flex:1;text-align:center"><div style="height:80px;display:flex;align-items:flex-end"><div style="width:100%;height:${r/5*100}%;background:${r?RC[Math.round(r)]:'transparent'};border-radius:4px"></div></div><div class="m" style="font-size:11px">${r?r.toFixed(1):'–'}</div></div>`}
+return `<h2 style="margin-top:6px">История творчества</h2>
+<div class="chips"><span class="chip ${range=='m'?'on':''}" onclick="A('rg','m')">Этот месяц</span><span class="chip ${range=='a'?'on':''}" onclick="A('rg','a')">Всё время</span></div>
+<div class="row"><div class="card"><div class="m">Дней занимался</div><div class="big">${days}</div></div><div class="card"><div class="m">Времени</div><div class="big">${fmt(tot)}</div></div></div>
+<h2>Время по проектам</h2><div class="card">${bars(bp,fmt,pn)}</div>
+<h2>Какие работы делаю чаще</h2><div class="card">${bars(bt,v=>v+' раз',x=>x)}</div>
+<h2>Проекты</h2><div class="row"><div class="card"><div class="m">Начато</div><div class="big">${db.projects.filter(p=>p.created>=lim).length}</div></div><div class="card"><div class="m">В работе</div><div class="big">${cnt('work')}</div></div></div>
+<div class="row"><div class="card"><div class="m">Демо</div><div class="big">${cnt('demo')}</div></div><div class="card"><div class="m">Закончено</div><div class="big">${cnt('done')}</div></div><div class="card"><div class="m">Выпущено</div><div class="big">${cnt('out')}</div></div></div>
+<h2>Как менялась оценка (по неделям)</h2><div class="card"><div style="display:flex;gap:6px">${wr}</div><div class="m" style="margin-top:6px">средняя оценка, 5 — получилось, 1 — совсем плохо</div></div>`}
+
+function projs(){return `<h2 style="margin-top:6px">Проекты</h2>
+<div class="card"><input id="np" placeholder="Название нового проекта"><button class="btn s" onclick="A('np')">+ Добавить проект</button></div>`+
+db.projects.map(p=>{const a=db.sessions.filter(s=>s.pid==p.id);
+return `<div class="card"><b>${esc(p.name)}</b><div class="m">${fmt(a.reduce((x,s)=>x+s.min,0))} · сессий: ${a.length}</div>
+<select onchange="A('st','${p.id}',this.value)">${Object.entries(ST).map(([k,v])=>`<option value="${k}" ${p.status==k?'selected':''}>${v}</option>`).join('')}</select></div>`}).join('')+backup()}
+
+const backup=()=>`<div class="card" style="margin-top:22px"><b>Резервная копия</b><div class="m" style="margin:4px 0 10px">Данные хранятся в браузере. Сохрани копию файлом, чтобы не потерять.</div><button class="btn s" onclick="A('ex')">Сохранить копию в файл</button><label class="btn s" style="margin-top:8px;text-align:center">Загрузить из файла<input type="file" accept=".json,application/json" style="display:none" onchange="imp(this)"></label></div>`;
+function imp(el){const f=el.files[0];if(!f)return;const r=new FileReader();
+r.onload=()=>{try{const d=JSON.parse(r.result);if(!d.projects||!d.sessions)throw 0;
+if(!confirm('Заменить текущие данные данными из файла?'))return;
+db={projects:d.projects,sessions:d.sessions,plans:d.plans||[]};save();render()}catch(e){alert('Не получилось прочитать файл')}};
+r.readAsText(f);el.value=''}
+const nav=()=>`<nav>${[['home','Сегодня'],['hist','История'],['pr','Проекты']].map(([k,v])=>`<a class="${tab==k?'on':''}" onclick="A('tab','${k}')">${v}</a>`).join('')}</nav>`;
+
+function render(){const o=document.querySelector('.sh>div'),sc=o?o.scrollTop:0;
+$('#app').innerHTML=welcome?viewWelcome():(tab=='home'?home():tab=='hist'?hist():projs())+(sheet?sheetView():'')+nav();
+const n=document.querySelector('.sh>div');if(n)n.scrollTop=sc}
+
+const acts={
+go:()=>welcome=0,
+tab:a=>{tab=a;selDay=null},
+day:a=>selDay=selDay==a?null:a,
+rg:a=>range=a,
+log:()=>{const l=last();draft={date:today(),pid:l?l.pid:(db.projects[0]||{}).id,types:[],rating:0,min:'',note:'',nn:''};sheet=1},
+ty:a=>{const i=draft.types.indexOf(a);i<0?draft.types.push(a):draft.types.splice(i,1)},
+all:()=>{draft.types=PROD.every(t=>draft.types.includes(t))?draft.types.filter(t=>!PROD.includes(t)):[...new Set([...draft.types,...PROD])]},
+sv:()=>{const d=draft;let pid=d.pid;
+if(!db.projects.length||pid=='new'){const n=(d.nn||'').trim();if(!n)return alert('Введи название проекта');pid=uid();db.projects.push({id:pid,name:n,status:'work',created:d.date})}
+if(!d.types.length)return alert('Выбери, что делал');if(!d.rating)return alert('Оцени результат');
+db.sessions.push({id:uid(),date:d.date,pid,types:d.types,rating:d.rating,min:+d.min||0,note:(d.note||'').trim()});sheet=0;save()},
+ap:()=>{const x=$('#pt').value.trim();if(!x)return;db.plans.push({id:uid(),date:$('#pd').value||today(),pid:$('#pp').value,text:x,min:+$('#pm').value||0,done:0});save()},
+tp:a=>{const p=db.plans.find(p=>p.id==a);p.done=p.done?0:1;save()},
+dp:a=>{db.plans=db.plans.filter(p=>p.id!=a);save()},
+ds:a=>{if(confirm('Удалить запись?')){db.sessions=db.sessions.filter(s=>s.id!=a);save()}},
+np:()=>{const n=$('#np').value.trim();if(!n)return;db.projects.push({id:uid(),name:n,status:'work',created:today()});save()},
+st:(a,b)=>{db.projects.find(p=>p.id==a).status=b;save()},
+ex:()=>{const b=new Blob([JSON.stringify(db)],{type:'application/json'});const a=document.createElement('a');
+a.href=URL.createObjectURL(b);a.download='music-diary-'+today()+'.json';document.body.appendChild(a);a.click();a.remove();
+setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+};
+function A(n,a,b){acts[n](a,b);render()}
+render();
+</script></body></html>
